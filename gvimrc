@@ -1,4 +1,9 @@
-set guifont=Consolas:h16
+let os = substitute(system('uname'), '\n', '', '')
+if os == 'Darwin' || os == 'Mac'
+    set guifont=Consolas:h16
+elseif os == 'Linux'
+    set guifont=Consolas\ 14
+endif
 colorscheme koehler
 set gcr=n-v-c:ver25-Cursor/lCursor,ve:ver25-Cursor,o:hor50-Cursor,i-ci:ver25-Cursor/lCursor,r-cr:hor20-Cursor/lCursor,sm:block-Cursor-blinkwait175-blinkoff150-blinkon175,a:blinkon0
 hi  Search        gui=NONE            guifg=black       guibg=lightblue

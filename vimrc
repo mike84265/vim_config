@@ -15,6 +15,7 @@ set t_Co=256
 set cursorline
 set splitright
 set splitbelow
+set vb t_vb=
 " set scroll=21
 
 au VimEnter * if &diff | execute 'windo set nowrap' | endif

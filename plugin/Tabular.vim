@@ -38,369 +38,306 @@
 " NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 " EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+" Abort if running in vi-compatible mode or the user doesn't want us.
+if &cp || exists('g:tabular_loaded')
+  if &cp && &verbose
+    echo "Not loading Tabular in compatible mode."
+  endif
+  finish
+endif
+
+let g:tabular_loaded = 1
+
 " Stupid vimscript crap                                                   {{{1
 let s:savecpo = &cpo
 set cpo&vim
 
-" Private Functions                                                       {{{1
+" Private Things                                                          {{{1
 
-" Return the number of bytes in a string after expanding tabs to spaces.  {{{2
-" This expansion is done based on the current value of 'tabstop'
-if exists('*strdisplaywidth')
-  " Needs vim 7.3
-  let s:Strlen = function("strdisplaywidth")
-else
-  function! s:Strlen(string)
-    " Implement the tab handling part of strdisplaywidth for vim 7.2 and
-    " earlier - not much that can be done about handling doublewidth
-    " characters.
-    let rv = 0
-    let i = 0
+" Dictionary of command name to command
+let s:TabularCommands = {}
 
-    for char in split(a:string, '\zs')
-      if char == "\t"
-        let rv += &ts - i
-        let i = 0
-      else
-        let rv += 1
-        let i = (i + 1) % &ts
+" Generate tab completion list for :Tabularize                            {{{2
+" Return a list of commands that match the command line typed so far.
+" NOTE: Tries to handle commands with spaces in the name, but Vim doesn't seem
+"       to handle that terribly well... maybe I should give up on that.
+function! s:CompleteTabularizeCommand(argstart, cmdline, cursorpos)
+  let names = keys(s:TabularCommands)
+  if exists("b:TabularCommands")
+    let names += keys(b:TabularCommands)
+  endif
+
+  let cmdstart = substitute(a:cmdline, '^\s*\S\+\s*', '', '')
+
+  return filter(names, 'v:val =~# ''^\V'' . escape(cmdstart, ''\'')')
+endfunction
+
+" Choose the proper command map from the given command line               {{{2
+" Returns [ command map, command line with leading <buffer> removed ]
+function! s:ChooseCommandMap(commandline)
+  let map = s:TabularCommands
+  let cmd = a:commandline
+
+  if cmd =~# '^<buffer>\s\+'
+    if !exists('b:TabularCommands')
+      let b:TabularCommands = {}
+    endif
+    let map = b:TabularCommands
+    let cmd = substitute(cmd, '^<buffer>\s\+', '', '')
+  endif
+
+  return [ map, cmd ]
+endfunction
+
+" Parse '/pattern/format' into separate pattern and format parts.         {{{2
+" If parsing fails, return [ '', '' ]
+function! s:ParsePattern(string)
+  if a:string[0] != '/'
+    return ['','']
+  endif
+
+  let pat = '\\\@<!\%(\\\\\)\{-}\zs/' . tabular#ElementFormatPattern() . '*$'
+  let format = matchstr(a:string[1:-1], pat)
+  if !empty(format)
+    let format = format[1 : -1]
+    let pattern = a:string[1 : -len(format) - 2]
+  else
+    let pattern = a:string[1 : -1]
+  endif
+
+  return [pattern, format]
+endfunction
+
+" Split apart a list of | separated expressions.                          {{{2
+function! s:SplitCommands(string)
+  if a:string =~ '^\s*$'
+    return []
+  endif
+
+  let end = match(a:string, "[\"'|]")
+
+  " Loop until we find a delimiting | or end-of-string
+  while end != -1 && (a:string[end] != '|' || a:string[end+1] == '|')
+    if a:string[end] == "'"
+      let end = match(a:string, "'", end+1) + 1
+      if end == 0
+        throw "No matching end single quote"
       endif
-    endfor
-
-    return rv
-  endfunction
-endif
-
-" Align a string within a field                                           {{{2
-" These functions do not trim leading and trailing spaces.
-
-" Right align 'string' in a field of size 'fieldwidth'
-function! s:Right(string, fieldwidth)
-  let spaces = a:fieldwidth - s:Strlen(a:string)
-  return matchstr(a:string, '^\s*') . repeat(" ", spaces) . substitute(a:string, '^\s*', '', '')
-endfunction
-
-" Left align 'string' in a field of size 'fieldwidth'
-function! s:Left(string, fieldwidth)
-  let spaces = a:fieldwidth - s:Strlen(a:string)
-  return a:string . repeat(" ", spaces)
-endfunction
-
-" Center align 'string' in a field of size 'fieldwidth'
-function! s:Center(string, fieldwidth)
-  let spaces = a:fieldwidth - s:Strlen(a:string)
-  let right = spaces / 2
-  let left = right + (right * 2 != spaces)
-  return repeat(" ", left) . a:string . repeat(" ", right)
-endfunction
-
-" Remove spaces around a string                                           {{{2
-
-" Remove all trailing spaces from a string.
-function! s:StripTrailingSpaces(string)
-  return matchstr(a:string, '^.\{-}\ze\s*$')
-endfunction
-
-" Remove all leading spaces from a string.
-function! s:StripLeadingSpaces(string)
-  return matchstr(a:string, '^\s*\zs.*$')
-endfunction
-
-" Split a string into fields and delimiters                               {{{2
-" Like split(), but include the delimiters as elements
-" All odd numbered elements are delimiters
-" All even numbered elements are non-delimiters (including zero)
-function! s:SplitDelim(string, delim)
-  let rv = []
-  let beg = 0
-
-  let len = len(a:string)
-  let searchoff = 0
-
-  while 1
-    let mid = match(a:string, a:delim, beg + searchoff, 1)
-    if mid == -1 || mid == len
-      break
+    elseif a:string[end] == '"'
+      " Find a " preceded by an even number of \ (or 0)
+      let pattern = '\%(\\\@<!\%(\\\\\)*\)\@<="'
+      let end = matchend(a:string, pattern, end+1) + 1
+      if end == 0
+        throw "No matching end double quote"
+      endif
+    else " Found ||
+      let end += 2
     endif
 
-    let matchstr = matchstr(a:string, a:delim, beg + searchoff, 1)
-    let length = strlen(matchstr)
-
-    if length == 0 && beg == mid
-      " Zero-length match for a zero-length delimiter - advance past it
-      let searchoff += 1
-      continue
-    endif
-
-    if beg == mid
-      let rv += [ "" ]
-    else
-      let rv += [ a:string[beg : mid-1] ]
-    endif
-
-    let rv += [ matchstr ]
-
-    let beg = mid + length
-    let searchoff = 0
+    let end = match(a:string, "[\"'|]", end)
   endwhile
 
-  let rv += [ strpart(a:string, beg) ]
+  if end == 0 || a:string[0 : end - (end > 0)] =~ '^\s*$'
+    throw "Empty element"
+  endif
+
+  if end == -1
+    let rv = [ a:string ]
+  else
+    let rv = [ a:string[0 : end-1] ] + s:SplitCommands(a:string[end+1 : -1])
+  endif
 
   return rv
 endfunction
 
-" Replace lines from `start' to `start + len - 1' with the given strings. {{{2
-" If more lines are needed to show all strings, they will be added.
-" If there are too few strings to fill all lines, lines will be removed.
-function! s:SetLines(start, len, strings)
-  if a:start > line('$') + 1 || a:start < 1
-    throw "Invalid start line!"
-  endif
+" Public Things                                                           {{{1
 
-  if len(a:strings) > a:len
-    let fensave = &fen
-    let view = winsaveview()
-    call append(a:start + a:len - 1, repeat([''], len(a:strings) - a:len))
-    call winrestview(view)
-    let &fen = fensave
-  elseif len(a:strings) < a:len
-    let fensave = &fen
-    let view = winsaveview()
-    sil exe (a:start + len(a:strings)) . ',' .  (a:start + a:len - 1) . 'd_'
-    call winrestview(view)
-    let &fen = fensave
-  endif
-
-  call setline(a:start, a:strings)
-endfunction
-
-" Runs the given commandstring argument as an expression.                 {{{2
-" The commandstring expression is expected to reference the a:lines argument.
-" If the commandstring expression returns a list the items of that list will
-" replace the items in a:lines, otherwise the expression is assumed to have
-" modified a:lines itself.
-function! s:FilterString(lines, commandstring)
-  exe 'let rv = ' . a:commandstring
-
-  if type(rv) == type(a:lines) && rv isnot a:lines
-    call filter(a:lines, 0)
-    call extend(a:lines, rv)
-  endif
-endfunction
-
-" Public API                                                              {{{1
-
-if !exists("g:tabular_default_format")
-  let g:tabular_default_format = "l1"
-endif
-
-let s:formatelempat = '\%([lrc]\d\+\)'
-
-function! tabular#ElementFormatPattern()
-  return s:formatelempat
-endfunction
-
-" Given a list of strings and a delimiter, split each string on every
-" occurrence of the delimiter pattern, format each element according to either
-" the provided format (optional) or the default format, and join them back
-" together with enough space padding to guarantee that the nth delimiter of
-" each string is aligned.
-function! tabular#TabularizeStrings(strings, delim, ...)
-  if a:0 > 1
-    echoerr "TabularizeStrings accepts only 2 or 3 arguments (got ".(a:0+2).")"
-    return 1
-  endif
-
-  let formatstr = (a:0 ? a:1 : g:tabular_default_format)
-
-  if formatstr !~? s:formatelempat . '\+'
-    echoerr "Tabular: Invalid format \"" . formatstr . "\" specified!"
-    return 1
-  endif
-
-  let format = split(formatstr, s:formatelempat . '\zs')
-
-  let lines = map(a:strings, 's:SplitDelim(v:val, a:delim)')
-
-  " Strip spaces
-  "   - Only from non-delimiters; spaces in delimiters must have been matched
-  "     intentionally
-  "   - Don't strip leading spaces from the first element; we like indenting.
-  for line in lines
-    if len(line) == 1 && s:do_gtabularize
-      continue " Leave non-matching lines unchanged for GTabularize
-    endif
-
-    if line[0] !~ '^\s*$'
-      let line[0] = s:StripTrailingSpaces(line[0])
-    endif
-    if len(line) >= 3
-      for i in range(2, len(line)-1, 2)
-        let line[i] = s:StripLeadingSpaces(s:StripTrailingSpaces(line[i]))
-      endfor
-    endif
-  endfor
-
-  " Find the max length of each field
-  let maxes = []
-  for line in lines
-    if len(line) == 1 && s:do_gtabularize
-      continue " non-matching lines don't affect field widths for GTabularize
-    endif
-
-    for i in range(len(line))
-      if i == len(maxes)
-        let maxes += [ s:Strlen(line[i]) ]
-      else
-        let maxes[i] = max( [ maxes[i], s:Strlen(line[i]) ] )
-      endif
-    endfor
-  endfor
-
-  let lead_blank = empty(filter(copy(lines), 'v:val[0] =~ "\\S"'))
-
-  " Concatenate the fields, according to the format pattern.
-  for idx in range(len(lines))
-    let line = lines[idx]
-
-    if len(line) == 1 && s:do_gtabularize
-      let lines[idx] = line[0] " GTabularize doesn't change non-matching lines
-      continue
-    endif
-
-    for i in range(len(line))
-      let how = format[i % len(format)][0]
-      let pad = format[i % len(format)][1:-1]
-
-      if how =~? 'l'
-        let field = s:Left(line[i], maxes[i])
-      elseif how =~? 'r'
-        let field = s:Right(line[i], maxes[i])
-      elseif how =~? 'c'
-        let field = s:Center(line[i], maxes[i])
-      endif
-
-      let line[i] = field . (lead_blank && i == 0 ? '' : repeat(" ", pad))
-    endfor
-
-    let lines[idx] = s:StripTrailingSpaces(join(line, ''))
-  endfor
-endfunction
-
-" Apply 0 or more filters, in sequence, to selected text in the buffer    {{{2
-" The lines to be filtered are determined as follows:
-"   If the function is called with a range containing multiple lines, then
-"     those lines will be used as the range.
-"   If the function is called with no range or with a range of 1 line, then
-"     if GTabularize mode is being used,
-"       the range will not be adjusted
-"     if "includepat" is not specified,
-"       that 1 line will be filtered,
-"     if "includepat" is specified and that line does not match it,
-"       no lines will be filtered
-"     if "includepat" is specified and that line does match it,
-"       all contiguous lines above and below the specified line matching the
-"       pattern will be filtered.
+" Command associating a command name with a simple pattern command        {{{2
+" AddTabularPattern[!] [<buffer>] name /pattern[/format]
 "
-" The remaining arguments must each be a filter to apply to the text.
-" Each filter must either be a String evaluating to a function to be called.
-function! tabular#PipeRange(includepat, ...) range
-  exe a:firstline . ',' . a:lastline
-      \ . 'call tabular#PipeRangeWithOptions(a:includepat, a:000, {})'
+" If <buffer> is provided, the command will only be available in the current
+" buffer, and will be used instead of any global command with the same name.
+"
+" If a command with the same name and scope already exists, it is an error,
+" unless the ! is provided, in which case the existing command will be
+" replaced.
+"
+" pattern is a regex describing the delimiter to be used.
+"
+" format describes the format pattern to be used.  The default will be used if
+" none is provided.
+com! -nargs=+ -bang AddTabularPattern
+   \ call AddTabularPattern(<q-args>, <bang>0)
+
+function! AddTabularPattern(command, force)
+  try
+    let [ commandmap, rest ] = s:ChooseCommandMap(a:command)
+
+    let name = matchstr(rest, '.\{-}\ze\s*/')
+    let pattern = substitute(rest, '.\{-}\s*\ze/', '', '')
+
+    let [ pattern, format ] = s:ParsePattern(pattern)
+
+    if empty(name) || empty(pattern)
+      throw "Invalid arguments!"
+    endif
+
+    if !a:force && has_key(commandmap, name)
+      throw string(name) . " is already defined, use ! to overwrite."
+    endif
+
+    let command = "tabular#TabularizeStrings(a:lines, " . string(pattern)
+
+    if !empty(format)
+      let command .=  ", " . string(format)
+    endif
+
+    let command .= ")"
+
+    let commandmap[name] = { 'pattern' : pattern, 'commands' : [ command ] }
+  catch
+    echohl ErrorMsg
+    echomsg "AddTabularPattern: " . v:exception
+    echohl None
+  endtry
 endfunction
 
-" Extended version of tabular#PipeRange, which
-" 1) Takes the list of filters as an explicit list rather than as varargs
-" 2) Supports passing a dictionary of options to control the routine.
-"    Currently, the only supported option is 'mode', which determines whether
-"    to behave as :Tabularize or as :GTabularize
-" This allows me to add new features here without breaking API compatibility
-" in the future.
-function! tabular#PipeRangeWithOptions(includepat, filterlist, options) range
-  let top = a:firstline
-  let bot = a:lastline
+" Command associating a command name with a pipeline of functions         {{{2
+" AddTabularPipeline[!] [<buffer>] name /pattern/ func [ | func2 [ | func3 ] ]
+"
+" If <buffer> is provided, the command will only be available in the current
+" buffer, and will be used instead of any global command with the same name.
+"
+" If a command with the same name and scope already exists, it is an error,
+" unless the ! is provided, in which case the existing command will be
+" replaced.
+"
+" pattern is a regex that will be used to determine which lines will be
+" filtered.  If the cursor line doesn't match the pattern, using the command
+" will be a no-op, otherwise the cursor and all contiguous lines matching the
+" pattern will be filtered.
+"
+" Each 'func' argument represents a function to be called.  This function
+" will have access to a:lines, a List containing one String per line being
+" filtered.
+com! -nargs=+ -bang AddTabularPipeline
+   \ call AddTabularPipeline(<q-args>, <bang>0)
 
-  let s:do_gtabularize = (get(a:options, 'mode', '') ==# 'GTabularize')
+function! AddTabularPipeline(command, force)
+  try
+    let [ commandmap, rest ] = s:ChooseCommandMap(a:command)
 
-  if !s:do_gtabularize
-    " In the default mode, apply range extension logic
-    if a:includepat != '' && top == bot
-      if top < 0 || top > line('$') || getline(top) !~ a:includepat
-        return
+    let name = matchstr(rest, '.\{-}\ze\s*/')
+    let pattern = substitute(rest, '.\{-}\s*\ze/', '', '')
+
+    let commands = matchstr(pattern, '^/.\{-}\\\@<!\%(\\\\\)\{-}/\zs.*')
+    let pattern = matchstr(pattern, '/\zs.\{-}\\\@<!\%(\\\\\)\{-}\ze/')
+
+    if empty(name) || empty(pattern)
+      throw "Invalid arguments!"
+    endif
+
+    if !a:force && has_key(commandmap, name)
+      throw string(name) . " is already defined, use ! to overwrite."
+    endif
+
+    let commandlist = s:SplitCommands(commands)
+
+    if empty(commandlist)
+      throw "Must provide a list of functions!"
+    endif
+
+    let commandmap[name] = { 'pattern' : pattern, 'commands' : commandlist }
+  catch
+    echohl ErrorMsg
+    echomsg "AddTabularPipeline: " . v:exception
+    echohl None
+  endtry
+endfunction
+
+" Tabularize /pattern[/format]                                            {{{2
+" Tabularize name
+"
+" Align text, either using the given pattern, or the command associated with
+" the given name.
+com! -nargs=* -range -complete=customlist,<SID>CompleteTabularizeCommand
+   \ Tabularize <line1>,<line2>call Tabularize(<q-args>)
+
+function! Tabularize(command, ...) range
+  let piperange_opt = {}
+  if a:0
+    let piperange_opt = a:1
+  endif
+
+  if empty(a:command)
+    if !exists("s:last_tabularize_command")
+      echohl ErrorMsg
+      echomsg "Tabularize hasn't been called yet; no pattern/command to reuse!"
+      echohl None
+      return
+    endif
+  else
+    let s:last_tabularize_command = a:command
+  endif
+
+  let command = s:last_tabularize_command
+
+  let range = a:firstline . ',' . a:lastline
+
+  try
+    let [ pattern, format ] = s:ParsePattern(command)
+
+    if !empty(pattern)
+      let cmd  = "tabular#TabularizeStrings(a:lines, " . string(pattern)
+
+      if !empty(format)
+        let cmd .= "," . string(format)
       endif
-      while top > 1 && getline(top-1) =~ a:includepat
-        let top -= 1
-      endwhile
-      while bot < line('$') && getline(bot+1) =~ a:includepat
-        let bot += 1
-      endwhile
+
+      let cmd .= ")"
+
+      exe range . 'call tabular#PipeRangeWithOptions(pattern, [ cmd ], '
+                      \ . 'piperange_opt)'
+    else
+      if exists('b:TabularCommands') && has_key(b:TabularCommands, command)
+        let usercmd = b:TabularCommands[command]
+      elseif has_key(s:TabularCommands, command)
+        let usercmd = s:TabularCommands[command]
+      else
+        throw "Unrecognized command " . string(command)
+      endif
+
+      exe range . 'call tabular#PipeRangeWithOptions(usercmd["pattern"], '
+                      \ . 'usercmd["commands"], piperange_opt)'
     endif
-  endif
-
-  let lines = map(range(top, bot), 'getline(v:val)')
-
-  for filter in a:filterlist
-    if type(filter) != type("")
-      echoerr "PipeRange: Bad filter: " . string(filter)
-    endif
-
-    call s:FilterString(lines, filter)
-
-    unlet filter
-  endfor
-
-  call s:SetLines(top, bot - top + 1, lines)
+  catch
+    echohl ErrorMsg
+    echomsg "Tabularize: " . v:exception
+    echohl None
+    return
+  endtry
 endfunction
 
-" Part of the public interface so interested pipelines can query this and
-" adjust their behavior appropriately.
-function! tabular#DoGTabularize()
-  return s:do_gtabularize
-endfunction
-
-function! s:SplitDelimTest(string, delim, expected)
-  let result = s:SplitDelim(a:string, a:delim)
-
-  if result !=# a:expected
-    echomsg 'Test failed!'
-    echomsg '  string=' . string(a:string) . '  delim=' . string(a:delim)
-    echomsg '  Returned=' . string(result)
-    echomsg '  Expected=' . string(a:expected)
-  endif
-endfunction
-
-function! tabular#SplitDelimUnitTest()
-  let assignment = '[|&+*/%<>=!~-]\@<!\([<>!=]=\|=\~\)\@![|&+*/%<>=!~-]*='
-  let two_spaces = '  '
-  let ternary_operator = '^.\{-}\zs?\|:'
-  let cpp_io = '<<\|>>'
-  let pascal_assign = ':='
-  let trailing_c_comments = '\/\*\|\*\/\|\/\/'
-
-  call s:SplitDelimTest('a+=b',    assignment, ['a', '+=', 'b'])
-  call s:SplitDelimTest('a-=b',    assignment, ['a', '-=', 'b'])
-  call s:SplitDelimTest('a!=b',    assignment, ['a!=b'])
-  call s:SplitDelimTest('a==b',    assignment, ['a==b'])
-  call s:SplitDelimTest('a&=b',    assignment, ['a', '&=', 'b'])
-  call s:SplitDelimTest('a|=b',    assignment, ['a', '|=', 'b'])
-  call s:SplitDelimTest('a=b=c',   assignment, ['a', '=', 'b', '=', 'c'])
-
-  call s:SplitDelimTest('a  b  c', two_spaces, ['a', '  ', 'b', '  ', 'c'])
-  call s:SplitDelimTest('a b   c', two_spaces, ['a b', '  ', ' c'])
-  call s:SplitDelimTest('ab    c', two_spaces, ['ab', '  ', '', '  ', 'c'])
-
-  call s:SplitDelimTest('a?b:c',   ternary_operator, ['a', '?', 'b', ':', 'c'])
-
-  call s:SplitDelimTest('a<<b<<c', cpp_io, ['a', '<<', 'b', '<<', 'c'])
-
-  call s:SplitDelimTest('a:=b=c',  pascal_assign, ['a', ':=', 'b=c'])
-
-  call s:SplitDelimTest('x//foo',  trailing_c_comments, ['x', '//', 'foo'])
-  call s:SplitDelimTest('x/*foo*/',trailing_c_comments, ['x', '/*', 'foo', '*/', ''])
-
-  call s:SplitDelimTest('#ab#cd#ef', '[^#]*', ['#', 'ab', '#', 'cd', '#', 'ef', ''])
-  call s:SplitDelimTest('#ab#cd#ef', '#\zs',  ['#', '', 'ab#', '', 'cd#', '', 'ef'])
-endfunction
+" GTabularize /pattern[/format]                                           {{{2
+" GTabularize name
+"
+" Align text on only matching lines, either using the given pattern, or the
+" command associated with the given name.  Mnemonically, this is similar to
+" the :global command, which takes some action on all rows matching a pattern
+" in a range.  This command is different from normal :Tabularize in 3 ways:
+"   1) If a line in the range does not match the pattern, it will be left
+"      unchanged, and not in any way affect the outcome of other lines in the
+"      range (at least, normally - but Pipelines can and will still look at
+"      non-matching rows unless they are specifically written to be aware of
+"      tabular#DoGTabularize() and handle it appropriately).
+"   2) No automatic range determination - :Tabularize automatically expands
+"      a single-line range (or a call with no range) to include all adjacent
+"      matching lines.  That behavior does not make sense for this command.
+"   3) If called without a range, it will act on all lines in the buffer (like
+"      :global) rather than only a single line
+com! -nargs=* -range=% -complete=customlist,<SID>CompleteTabularizeCommand
+   \ GTabularize <line1>,<line2>
+   \ call Tabularize(<q-args>, { 'mode': 'GTabularize' } )
 
 " Stupid vimscript crap, part 2                                           {{{1
 let &cpo = s:savecpo
