@@ -23,6 +23,8 @@ function! Comment(exe_mode, line1, line2)
     let l:comment_chars = ['; ', '; ']
   elseif l:file_type == 'log'
     let l:comment_chars = ['\*\* ', '** ']
+  elseif l:file_type == 'tex'
+    let l:comment_chars = ['% ', '% ']
   else
     let l:comment_chars = ['# ', '# ']
   endif
