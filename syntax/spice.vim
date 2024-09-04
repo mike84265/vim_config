@@ -22,12 +22,15 @@ syn match spiceComment  "\$.*$" contains=@Spell
 
 " Numbers, all with engineering suffixes and optional units
 "==========================================================
-"floating point number, with dot, optional exponent
-syn match spiceNumber  "\<[0-9]\+\.[0-9]*\(e[-+]\=[0-9]\+\)\=\(meg\=\|[afpnumkg]\)\="
-"floating point number, starting with a dot, optional exponent
-syn match spiceNumber  "\.[0-9]\+\(e[-+]\=[0-9]\+\)\=\(meg\=\|[afpnumkg]\)\="
-"integer number with optional exponent
-syn match spiceNumber  "\<[0-9]\+\(e[-+]\=[0-9]\+\)\=\(meg\=\|[afpnumkg]\)\="
+" integer number with optional exponent
+" syn match spiceNumber  "\<[0-9]\+\(e[-+]\=[0-9]\+\)\=\(meg\=\|[afpnumkg]\)\="
+" floating point number, with dot, optional exponent
+" syn match spiceNumber  "\<[0-9]\.[0-9]\+\(e[-+]\=[0-9]\+\)\=\(meg\=\|[afpnumkg]\)\="
+" floating point number, starting with a dot, optional exponent
+" syn match spiceNumber  "\<\.[0-9]\+\(e[-+]\=[0-9]\+\)\=\(meg\=\|[afpnumkg]\)\="
+
+" Ultimate single representation for all numbers
+syn match spiceNumber  "\<\([0-9]*\.[0-9]\+\|[0-9]\+\(\.[0-9]\+\)\=\)\(e[-+]\=[0-9]\+\)\=\(meg\=\|[afpnumkg]\)\="
 
 " Misc
 "=====
@@ -46,7 +49,7 @@ syn region  spiceCell transparent start="^\.subckt" end="^\.ends" fold keepend
 " syn match   spiceCellName "\S\+" contained nextgroup=spicePinName skipwhite containedin=spiceCell
 " syn match   spicePinName "[^ \t+\/]\+" contained skipwhite nextgroup=spicePinName,spicePinNameCont containedin=spiceCell
 
-syn region  spiceCellDeclare transparent start="^\.subckt" end="^[RCXM]"me=e-1 contained containedin=spiceCell contains=spiceCellName,spicePinName,spicePinNameCont
+syn region  spiceCellDeclare transparent start="^\.subckt" skip="^ \=\*.*$" end="^\([^+].*\|\)$"me=s-1 contained containedin=spiceCell contains=spiceCellName,spicePinName,spicePinNameCont,spiceComment
 syn match   spiceCellName "[^ \t+\/]\+" contained nextgroup=spicePinName skipwhite containedin=spiceCellDeclare
 syn match   spicePinName "[^ \t+\/]\+" contained skipwhite skipnl nextgroup=spicePinName,spicePinNameCont containedin=spiceCellDeclare
 syn match   spicePinNameCont "^+\s*\S\+" transparent display contained skipwhite nextgroup=spicePinName contains=spiceWrapLineOperator,spicePinName containedin=spiceCellDeclare
@@ -54,6 +57,13 @@ syn match   spiceSubckt "^\.subckt" nextgroup=spiceCellName skipwhite containedi
 syn match   spiceSubckt "^\.ends" containedin=spiceCell,spiceCommand contained
 syn match   spiceParam "[^ \t$]\+="me=e-1 
 syn match   spiceDevice "^[RCXM]\S\+"
+
+syn match spiceComment  "^ \=\*.*$" contains=@Spell
+syn match spiceComment  "\$.*$" contains=@Spell
+
+syn region spfRCRegion transparent start="^\*|NET" end="^\([^*RC].*\|\)$"me=s-1 contains=spiceDevice,spiceNumber,spiceComment fold keepend
+
+syn iskeyword @,48-57,192-255,$,_,.
 
 " Errors
 "=======
@@ -84,6 +94,8 @@ hi spiceDevice   cterm=BOLD            ctermfg=105 guifg=#8787ff
 hi def link spiceSubckt spiceCommand
 
 set fdm=syntax
+
+au BufNewFile,BufRead *.spf set filetype=spice
 
 let b:current_syntax = "spice"
 
