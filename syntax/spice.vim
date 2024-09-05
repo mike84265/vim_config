@@ -95,8 +95,6 @@ hi def link spiceSubckt spiceCommand
 
 set fdm=syntax
 
-au BufNewFile,BufRead *.spf set filetype=spice
-
 let b:current_syntax = "spice"
 
 " insert the following to $VIM/syntax/scripts.vim
