@@ -51,7 +51,6 @@ syn region  spiceCell transparent start="^\.subckt" end="^\.ends" fold keepend
 
 syn region  spiceCellDeclare transparent start="^\.subckt" skip="^ \=\*.*$" end="^\([^+].*\|\)$"me=s-1 contained containedin=spiceCell contains=spiceCellName,spicePinName,spicePinNameCont,spiceComment
 syn match   spiceCellName "[^ \t+\/]\+" contained nextgroup=spicePinName skipwhite containedin=spiceCellDeclare
-" syn match   spicePinName "[^ \t+\/]\+" contained skipwhite skipnl nextgroup=spicePinName,spicePinNameCont containedin=spiceCellDeclare
 syn match   spicePinName "[^ \t+\/]\+" contained skipwhite nextgroup=spicePinName,spicePinNameCont containedin=spiceCellDeclare
 syn match   spicePinNameCont "\n+\s*\S\+" transparent display contained skipwhite nextgroup=spicePinName contains=spiceWrapLineOperator,spicePinName containedin=spiceCellDeclare
 syn match   spiceSubckt "^\.subckt" nextgroup=spiceCellName skipwhite containedin=spiceCellDeclare,spiceCommand contained
