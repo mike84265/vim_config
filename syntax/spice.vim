@@ -42,7 +42,7 @@ syn match   spiceCommand "^\.\w\+"
 
 " Matching pairs of parentheses
 "==========================================
-syn region  spiceParen transparent matchgroup=spiceOperator start="(" end=")" contains=ALLBUT,spiceParenError
+syn region  spiceParen transparent matchgroup=spiceOperator start="(" end=")" contains=ALLBUT,spiceParenError,spicePinName,spicePinNameCont,spiceCellName
 syn region  spiceSinglequote matchgroup=spiceOperator start=+'+ end=+'+
 syn region  spiceCell transparent start="^\.subckt" end="^\.ends" fold keepend
 
@@ -52,10 +52,10 @@ syn region  spiceCell transparent start="^\.subckt" end="^\.ends" fold keepend
 syn region  spiceCellDeclare transparent start="^\.subckt" skip="^ \=\*.*$" end="^\([^+].*\|\)$"me=s-1 contained containedin=spiceCell contains=spiceCellName,spicePinName,spicePinNameCont,spiceComment
 syn match   spiceCellName "[^ \t+\/]\+" contained nextgroup=spicePinName skipwhite containedin=spiceCellDeclare
 syn match   spicePinName "[^ \t+\/]\+" contained skipwhite nextgroup=spicePinName,spicePinNameCont containedin=spiceCellDeclare
-syn match   spicePinNameCont "\n+\s*\S\+" transparent display contained skipwhite nextgroup=spicePinName contains=spiceWrapLineOperator,spicePinName containedin=spiceCellDeclare
+syn match   spicePinNameCont "\n+\s*[^ \t+\/]\+" transparent display contained skipwhite nextgroup=spicePinName contains=spiceWrapLineOperator,spicePinName containedin=spiceCellDeclare
 syn match   spiceSubckt "^\.subckt" nextgroup=spiceCellName skipwhite containedin=spiceCellDeclare,spiceCommand contained
 syn match   spiceSubckt "^\.ends" containedin=spiceCell,spiceCommand contained
-syn match   spiceParam "[^ \t$]\+="me=e-1 
+syn match   spiceParam "[^ \t$+]\+\ze\s*="
 syn match   spiceDevice "^[RCXM]\S\+"
 
 syn match spiceComment  "^ \=\*.*$" contains=@Spell
