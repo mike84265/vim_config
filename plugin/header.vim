@@ -91,5 +91,5 @@ let advprog = 0
 " cabbrev header <c-r>=(getcmdtype()==':' && getcmdpos()==1 ? 'call InsertHeader()' : '')<CR>
 " map <Leader>t : call UpdateHeaderTime()<CR>
 
-cabbrev header <c-r>=(getcmdtype()==':' && getcmdpos()==1 ? (advprog==1? 'call AdvProgHeader()' : 'call InsertHeader()')  : '')<CR>
-map <Leader>t : call (advprog==1? UpdateAdvProgHeaderTime() : UpdateHeaderTime())<CR>
+cabbrev header <c-r>=(getcmdtype()==':' && getcmdpos()==1 ? (advprog==1? 'call AdvProgHeader()' : 'call InsertHeader()')  : 'header')<CR>
+map <Leader>t :call <c-r>=(advprog==1? 'UpdateAdvProgHeaderTime()' : 'UpdateHeaderTime()')<CR><CR>
