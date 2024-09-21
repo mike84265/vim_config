@@ -14,6 +14,7 @@ endif
 
 " spice syntax is case INsensitive
 syn case ignore
+set iskeyword+=.,:
 
 syn keyword	spiceTodo	contained TODO
 

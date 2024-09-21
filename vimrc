@@ -25,7 +25,7 @@ hi  DiffAdd       cterm=BOLD            ctermfg=white       ctermbg=darkgreen
 hi  DiffChange    cterm=BOLD            ctermfg=white       ctermbg=darkcyan
 hi  DiffText      cterm=BOLD            ctermfg=white       ctermbg=56
 hi  DiffDelete    cterm=BOLD            ctermfg=black       ctermbg=darkred
-hi  Folded        cterm=NONE            ctermfg=243         ctermbg=232
+hi  Folded        cterm=ITALIC          ctermfg=243         ctermbg=232
 hi  CursorLine    cterm=NONE            ctermfg=NONE        ctermbg=235
 hi  TabLine       cterm=NONE            ctermfg=246         ctermbg=darkblue
 hi  TabLineSel    cterm=BOLD,UNDERLINE  ctermfg=21          ctermbg=220
@@ -38,6 +38,7 @@ autocmd BufWinEnter *.* silent loadview
 
 map  <silent> <F12>  :Tlist<CR>
 map  <silent> <F5>   :let &wrap=1-&wrap<CR>:echo "wrap=" . (&wrap? "on": "off")<CR>
+map  <silent> <C-F5> :let &cursorline=1-&cursorline<CR>
 map  <silent> <F6>   :let &fdc=&fdc+3<CR>
 map  <silent> <C-F6> :let &fdc=&fdc-3<CR>
 nmap <silent> f>     :<C-U>let &fdc=&fdc + v:count1<CR>
@@ -60,6 +61,8 @@ noremap  <Leader>p "+p
 noremap  <Leader>P "+P
 noremap  <Leader>\ :nohl<CR>
 
+let tlist_lef_settings = 'lef;m:Macro'
+let tlist_spice_settings = 'spice;s:Subckt'
 let Tlist_GainFocus_On_ToggleOpen=1
 let Tlist_Exit_OnlyWindow=1
 let Tlist_Auto_Highlight_Tag=1
@@ -71,6 +74,7 @@ set incsearch
 
 set nocompatible              " be iMproved, required
 filetype on                   " required
+let g:python_highlight_all = 1
 
 " set rtp+=~/tabnine-vim
 
