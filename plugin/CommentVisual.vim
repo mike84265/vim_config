@@ -15,7 +15,7 @@ function! Comment(exe_mode, line1, line2)
     let l:comment_chars = ['" ', '" ']
   elseif l:file_type == 'basic'
     let l:comment_chars = ["' ", "' "]
-  elseif l:file_type == 'cpp' || l:file_type == 'c' || l:file_type == 'javascript'
+  elseif l:file_type == 'cpp' || l:file_type == 'c' || l:file_type == 'javascript' || l:file_type == 'cuda'
     let l:comment_chars = ['\/\/ ', '\/\/ ']
   elseif l:file_type == 'spice' || l:file_type == 'spf'
     let l:comment_chars = ['\* ', '* ']
